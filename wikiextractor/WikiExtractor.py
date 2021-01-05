@@ -277,7 +277,7 @@ def decode_open(filename, mode='rt', encoding='utf-8'):
 
 
 def process_dump(input_file, template_file, out_file, file_size, file_compress,
-                 process_count, html_safe):
+                 process_count, html_safe, category_filter):
     """
     :param input_file: name of the wikipedia dump file; '-' to read from stdin
     :param template_file: optional file with template definitions.
@@ -384,10 +384,13 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     ordinal = 0  # page count
     inText = False
     redirect = False
+    categories = []
     for line in input:
         if '<' not in line:  # faster than doing re.search()
             if inText:
                 page.append(line)
+                if '[[Category:' in line:
+                    categories.append(line.split(':')[1].split(']')[0])
             continue
         m = tagRE.search(line)
         if not m:
@@ -421,12 +424,14 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
             if (colon < 0 or (title[:colon] in acceptedNamespaces) and id != last_id and
                     not redirect and not title.startswith(templateNamespace)):
                 job = (id, revid, urlbase, title, page, ordinal)
-                jobs_queue.put(job)  # goes to any available extract_process
-                last_id = id
-                ordinal += 1
+                if [x for x in categories if category_filter.lower() in x.lower()]:
+                    jobs_queue.put(job)  # goes to any available extract_process
+                    last_id = id
+                    ordinal += 1
             id = ''
             revid = ''
             page = []
+            categories = []
 
     input.close()
 
@@ -541,6 +546,7 @@ def main():
                         help="Do not expand templates")
     groupP.add_argument("--html-safe", default=True,
                         help="use to produce HTML safe output within <doc>...</doc>")
+    groupP.add_argument("-g", "--filter-category", default="Living persons", help="only extract pages of a specific category")
     default_process_count = cpu_count() - 1
     parser.add_argument("--processes", type=int, default=default_process_count,
                         help="Number of processes to use (default %(default)s)")
@@ -631,7 +637,7 @@ def main():
             return
 
     process_dump(input_file, args.templates, output_path, file_size,
-                 args.compress, args.processes, args.html_safe)
+                 args.compress, args.processes, args.html_safe, args.filter_category)
 
 
 if __name__ == '__main__':
